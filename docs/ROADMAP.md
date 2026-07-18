@@ -60,10 +60,15 @@ Move items to **Done** as they land. If work reveals new open problems, add them
 
 ## Next — trust hardening
 
-- **Stronger timestamp anchor.** The committer date is self-assertable (`GIT_COMMITTER_DATE`
-  is backdatable). The real anchor is *push*-time / OpenTimestamps / a PageLeft anchor. Record
-  the first-observed-push time so the anti-tailoring claim rests on a receipt the candidate
-  can't set, not just the commit metadata they can.
+- **Stronger timestamp anchor (partly done via `wayback`).** The git committer date is self-
+  assertable (`GIT_COMMITTER_DATE` is backdatable). The `wayback` backend already supplies an
+  un-backdatable third-party anchor (Internet Archive crawl time) for any URL. Remaining: fold
+  Wayback captures into the index alongside git versions (a `snapshots` table), cross-check the
+  two backends against each other, and add push-time / OpenTimestamps for git-only resumes.
+- **Codeberg / GitLab as secondary discovery.** Neither offers convenient unauthenticated
+  *code* search (GitLab blob search needs auth + Elasticsearch; Gitea code search is per-repo).
+  Both do offer *repo-name* search — a coarser channel: find repos named resume/cv, then probe
+  for the file. Lower yield than GitHub code search; worth it only once GitHub is exhausted.
 - **Per-candidate version scarcity.** The signal assumes a small, deliberate set of versions;
   an auto-committing resume (hourly stats churn) defeats the timestamp signal the same way
   tailoring does. Surface a scarcity/entropy score, or cap how many versions read as "real."

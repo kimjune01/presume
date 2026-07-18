@@ -57,8 +57,17 @@ presume search   [--role R] [--min-versions N] [--min-span-days N] [--committed-
                                                          # query talent by role + provenance shape; returns pointers
 presume verify   OWNER/REPO SHA --path FILE              # resolve a pointer: frozen content + authority URL
 presume apply    OWNER/REPO SHA --path FILE --job REF    # apply by reference; emit the anti-tailoring signal
+presume wayback  URL                                     # un-backdatable provenance chain from the Internet Archive
+presume mask     [OWNER/REPO --path FILE]                # filter pass, or mask one entry manually
 presume log      [HANDLE]                                # indexed versions and applications
 ```
+
+**Two provenance backends.** *git* (content-addressed, fine-grained, but the committer date is
+self-assertable) and the *Internet Archive* (`wayback`) — whose snapshot timestamps are set by
+the Archive's crawler, not the candidate, so they are **un-backdatable**, and which covers the
+resumes that never touch git (personal sites, HTML, PDFs). `wayback norvig.com/resume.html`
+returns a 78-capture chain back to 1997. A snapshot from before a posting is pre-commitment
+proof the candidate cannot forge — the strongest anti-tailoring anchor presume has.
 
 **Agent-first.** `search --json` returns an array of pointer objects (`repo`, `path`, `roles`,
 `versions`, `span_days`, `earliest_sha`, `authority`), deepest-provenance first — a few

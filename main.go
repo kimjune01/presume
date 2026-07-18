@@ -28,6 +28,7 @@ import (
 
 	"github.com/kimjune01/presume/forge"
 	"github.com/kimjune01/presume/platform"
+	"github.com/kimjune01/presume/wayback"
 )
 
 const tailoringDays = 3
@@ -73,7 +74,17 @@ func main() {
 	case "classify":
 		check(cmdClassify(db, gh))
 	case "mask":
-		check(cmdMask(db))
+		if repo, rest := arg(os.Args[2:]); repo != "" {
+			fs := flag.NewFlagSet("mask", flag.ExitOnError)
+			fp := fs.String("path", "", "file path within the repo")
+			reason := fs.String("reason", "manual", "why it's masked")
+			fs.Parse(rest)
+			require(*fp != "", "usage: presume mask OWNER/REPO --path FILE [--reason R]")
+			check(db.Mask(repo, *fp, *reason, nowUTC()))
+			fmt.Printf("masked %s :: %s\n", repo, *fp)
+		} else {
+			check(cmdMask(db))
+		}
 	case "categories":
 		check(cmdCategories(db))
 	case "search":
@@ -102,6 +113,9 @@ func main() {
 		fs.Parse(rest)
 		require(repo != "" && sha != "" && *fp != "" && *job != "", "usage: presume apply OWNER/REPO SHA --path FILE --job REF")
 		check(cmdApply(db, gh, repo, sha, *fp, *job))
+	case "wayback":
+		require(len(os.Args) >= 3, "usage: presume wayback URL")
+		check(cmdWayback(os.Args[2]))
 	case "log":
 		h := ""
 		if len(os.Args) >= 3 {
@@ -300,6 +314,30 @@ func cmdApply(db *platform.DB, gh *forge.Client, repo, sha, path, job string) er
 	return nil
 }
 
+// cmdWayback resolves the un-backdatable provenance chain of a resume URL from the Internet
+// Archive — a third-party timestamp anchor that works for non-git resumes (sites, HTML, PDFs).
+func cmdWayback(rawURL string) error {
+	snaps, err := wayback.CDX(rawURL)
+	if err != nil {
+		return err
+	}
+	if len(snaps) == 0 {
+		fmt.Printf("%s — no captures in the Wayback Machine\n", rawURL)
+		return nil
+	}
+	first, last := snaps[0], snaps[len(snaps)-1]
+	span := int(last.Time().Sub(first.Time()).Hours() / 24)
+	fmt.Printf("wayback provenance for %s\n", rawURL)
+	fmt.Printf("  %d distinct-content captures over %d days (%s → %s)\n",
+		len(snaps), span, first.Time().Format("2006-01-02"), last.Time().Format("2006-01-02"))
+	fmt.Printf("  timestamps are the Archive's, not the candidate's — un-backdatable\n")
+	fmt.Printf("  earliest anchor: %s\n", first.URL())
+	if len(snaps) > 1 {
+		fmt.Printf("  latest capture : %s\n", last.URL())
+	}
+	return nil
+}
+
 func cmdLog(db *platform.DB, handle string) error {
 	versions, err := db.Versions(handle)
 	if err != nil {
@@ -373,6 +411,7 @@ func usage() {
   presume search   [--role R] [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S] [--limit N] [--json]
   presume verify   OWNER/REPO SHA --path FILE
   presume apply    OWNER/REPO SHA --path FILE --job REF
+  presume wayback  URL                    # un-backdatable provenance chain from the Internet Archive
   presume log      [HANDLE]
 
 Roles: frontend backend fullstack mobile ml-ai data-engineer data-analyst devops-sre security systems qa-test game blockchain

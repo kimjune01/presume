@@ -65,16 +65,17 @@ const (
 // yaml/yml) — not .html/.tex, whose histories are dominated by build churn, not claim edits.
 var resumeBasename = regexp.MustCompile(`(?i)^(my)?(resume|cv|cv-resume)\.(md|markdown|json|ya?ml)$`)
 
-// Reject course repos / templates / prompt libs / agent-command files — not personal resumes.
-// The locale/bot patterns (/languages/, /i18n/, /music/, discord) exclude the biggest
-// resume.json false positive: the "resume" (playback) command's i18n file in Discord bots.
-var notPersonal = regexp.MustCompile(`(?i)template|example|sample|boilerplate|starter|tutorial|` +
-	`course|homework|assign|awesome|prompt|snippet|lingo|cs[-_]?\d{2,}|dm-gy|topjava|ml[-_]?note|` +
-	`\.claude/|\.codex/|/commands/|/skills/|/_posts/|reading-notes|-sources|/skills-|resolve-merge|` +
-	`test-with-action|github-pages|/docs/|_sdk|` +
-	`/languages/|/locales/|/lang/|/i18n/|/music/|discord|guvi|weekend-practice|` +
-	`/schemas/|/trigger/|` + // resume.json is also used as a JSON-schema def / ETL trigger file
-	`interview|capstone|bootcamp|curriculum|coursework`) // repos that ship a demo/practice resume
+// Reject non-personal-resume hits — templates, courses, prompt libs, tool repos, test fixtures,
+// and the locale-file class (resume.json is also the "resume" playback command's i18n file in
+// Discord bots). Two parts: (1) substring markers in repo/path; (2) directory segments, anchored
+// with (^|/) so a ROOT-level dir (docs/…, fixtures/…) matches, not only a nested one.
+var notPersonal = regexp.MustCompile(`(?i)` +
+	`template|example|sample|boilerplate|starter|tutorial|course|homework|assign|awesome|` +
+	`prompt|snippet|lingo|cs[-_]?\d{2,}|dm-gy|topjava|ml[-_]?note|reading-notes|-sources|` +
+	`skills-|resolve-merge|test-with-action|github-pages|_sdk|discord|guvi|weekend-practice|` +
+	`interview|capstone|bootcamp|curriculum|coursework|generator|cv-builder|sandbox|test-webapp|` +
+	`(^|/)(docs|schemas|trigger|fixtures|__fixtures__|eval|languages|locales|lang|i18n|music|` +
+	`node_modules|\.claude|\.codex|commands|skills|_posts)/`)
 
 type cursor struct {
 	QI   int  `json:"qi"`
