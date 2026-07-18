@@ -73,7 +73,8 @@ var notPersonal = regexp.MustCompile(`(?i)template|example|sample|boilerplate|st
 	`\.claude/|\.codex/|/commands/|/skills/|/_posts/|reading-notes|-sources|/skills-|resolve-merge|` +
 	`test-with-action|github-pages|/docs/|_sdk|` +
 	`/languages/|/locales/|/lang/|/i18n/|/music/|discord|guvi|weekend-practice|` +
-	`/schemas/|/trigger/`) // resume.json is also used as a JSON-schema def / ETL trigger file
+	`/schemas/|/trigger/|` + // resume.json is also used as a JSON-schema def / ETL trigger file
+	`interview|capstone|bootcamp|curriculum|coursework`) // repos that ship a demo/practice resume
 
 type cursor struct {
 	QI   int  `json:"qi"`
@@ -169,6 +170,29 @@ func cmdDiscover(db *platform.DB, gh *forge.Client, dbPath string, pages int, re
 	for _, r := range recent {
 		fmt.Printf("  %s :: %s   (presume index %s --path %s)\n", r.Repo, r.Path, r.Repo, r.Path)
 	}
+	return nil
+}
+
+// cmdMask retroactively suppresses corpus entries that the current non-personal filter rejects
+// — the false-positive classes ingested under looser filters (interview repos, coursework, JSON
+// data files). It sets the masked flag rather than deleting: reversible, and it records why.
+func cmdMask(db *platform.DB) error {
+	resumes, err := db.DistinctResumes()
+	if err != nil {
+		return err
+	}
+	now := nowUTC()
+	masked := 0
+	for _, r := range resumes {
+		if notPersonal.MatchString(r.Repo) || notPersonal.MatchString(r.Path) || !resumeBasename.MatchString(basename(r.Path)) {
+			if err := db.Mask(r.Repo, r.Path, "non-personal (filter)", now); err != nil {
+				return err
+			}
+			masked++
+		}
+	}
+	total, _ := db.MaskedCount()
+	fmt.Printf("masked %d non-resume entries this pass (%d masked total); omitted from search\n", masked, total)
 	return nil
 }
 

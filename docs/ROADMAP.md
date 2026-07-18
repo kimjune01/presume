@@ -27,14 +27,23 @@ Move items to **Done** as they land. If work reveals new open problems, add them
 - **Non-custodial / pointer-only trust model** documented and enforced in code — no rehosting,
   no copyright surface, no license filter on indexed resumes (contrast: pageleft is a
   content/RAG index and must restrict to copyleft sources).
+- **`ingest` → `classify` → agent-first search.** `ingest` pulls provenance for every
+  discovered candidate; `classify` derives role tags (curated keyword scaffold, 13 recruiter
+  categories) from content fetched ephemerally, stored as pointer-adjacent tags; `search`
+  takes `--role` / `--limit` / `--json` and returns resolvable pointer objects, deepest
+  provenance first. `categories` lists the curated menu with counts.
+- **Masking.** A per-resume `masked` flag suppresses non-resume false positives (interview
+  repos, coursework, JSON data files) from search and browse without deleting them — reversible
+  and it records the reason. `mask` re-applies the current non-personal filter to the corpus.
 
 ## Next — highest leverage
 
-- **Index on job titles / roles.** Let recruiters query talent by role ("staff compiler
-  engineer"), not only by provenance shape. Tension to resolve: role extraction wants to read
-  content, but the pointer-only model forbids rehosting. Resolution — extract role tags at
-  index time and store the *derived tags* (a pointer-adjacent fact), never the resume body;
-  or resolve-and-extract at query time. Keep emission cost on the candidate at zero.
+- **Emergent categories.** The current role taxonomy (`classify` / `categories`) is a curated
+  keyword scaffold — affordable while the corpus is thin, but hand-maintained and not
+  sustainable. Long-term the categories and their signals should be *derived* from the corpus
+  (clustering real resumes) and the demand side (real job postings), not kept by hand. Also:
+  coverage is ~30% at threshold 2 — lift it without wrecking precision (weak language signals,
+  confidence tiers), and add seniority (staff / senior / …) as a second axis recruiters query.
 - **Content-vs-presentation diff for the anti-tailoring signal.** The raw commit-time latency
   over-fires on cosmetic churn (observed: a candidate with 16 commits in one day that were all
   CSS/layout, not claim edits — would false-flag as "tailored"). Fix: strip frontmatter /

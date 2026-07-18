@@ -72,6 +72,10 @@ func main() {
 		check(cmdIngest(db, gh))
 	case "classify":
 		check(cmdClassify(db, gh))
+	case "mask":
+		check(cmdMask(db))
+	case "categories":
+		check(cmdCategories(db))
 	case "search":
 		fs := flag.NewFlagSet("search", flag.ExitOnError)
 		mv := fs.Int("min-versions", 1, "minimum version count")
@@ -364,6 +368,8 @@ func usage() {
   presume seed     HANDLE
   presume ingest
   presume classify
+  presume mask
+  presume categories
   presume search   [--role R] [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S] [--limit N] [--json]
   presume verify   OWNER/REPO SHA --path FILE
   presume apply    OWNER/REPO SHA --path FILE --job REF

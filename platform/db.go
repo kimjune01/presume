@@ -23,7 +23,10 @@ CREATE TABLE IF NOT EXISTS discovered(
   url TEXT PRIMARY KEY, repo TEXT, path TEXT, found_at TEXT);
 CREATE TABLE IF NOT EXISTS roles(
   repo TEXT, path TEXT, role TEXT, score INTEGER,
-  PRIMARY KEY(repo, path, role));`
+  PRIMARY KEY(repo, path, role));
+CREATE TABLE IF NOT EXISTS masks(
+  repo TEXT, path TEXT, reason TEXT, masked_at TEXT,
+  PRIMARY KEY(repo, path));`
 
 func Open(path string) (*DB, error) {
 	conn, err := sql.Open("sqlite", path)
@@ -90,7 +93,9 @@ func (d *DB) SearchCandidates(minVersions, minSpanDays int, committedBefore, han
 	rows, err := d.conn.Query(`
 	  SELECT repo, path, count(*) n, min(committed_at) first, max(committed_at) latest,
 	         CAST(julianday(max(committed_at)) - julianday(min(committed_at)) AS INT) span
-	  FROM versions GROUP BY repo, path`)
+	  FROM versions
+	  WHERE NOT EXISTS (SELECT 1 FROM masks m WHERE m.repo = versions.repo AND m.path = versions.path)
+	  GROUP BY repo, path`)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +248,41 @@ func (d *DB) Applications(handle string) ([]AppRow, error) {
 	return out, rows.Err()
 }
 
+// masks — the per-resume "is it masked" flag. A masked (repo,path) is a suppressed non-resume:
+// kept in the db (reversible, and it records why) but omitted from search and the browse list.
+
+func (d *DB) Mask(repo, path, reason, at string) error {
+	_, err := d.conn.Exec(
+		`INSERT INTO masks(repo,path,reason,masked_at) VALUES (?,?,?,?)
+		 ON CONFLICT(repo,path) DO UPDATE SET reason=excluded.reason, masked_at=excluded.masked_at`,
+		repo, path, reason, at)
+	return err
+}
+
+func (d *DB) MaskedCount() (int, error) { return d.Count("masks") }
+
+// RoleCounts returns how many (unmasked) resumes carry each role tag.
+func (d *DB) RoleCounts() (map[string]int, error) {
+	rows, err := d.conn.Query(`
+		SELECT role, count(*) FROM roles
+		WHERE NOT EXISTS (SELECT 1 FROM masks m WHERE m.repo=roles.repo AND m.path=roles.path)
+		GROUP BY role`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var role string
+		var n int
+		if err := rows.Scan(&role, &n); err != nil {
+			return nil, err
+		}
+		out[role] = n
+	}
+	return out, rows.Err()
+}
+
 type Discovered struct{ Repo, Path string }
 
 // AllDiscovered lists every discovered candidate (for ingest — pull each one's provenance).
@@ -264,7 +304,10 @@ func (d *DB) AllDiscovered() ([]Discovered, error) {
 }
 
 func (d *DB) RecentDiscovered(limit int) ([]Discovered, error) {
-	rows, err := d.conn.Query(`SELECT repo,path FROM discovered ORDER BY found_at DESC LIMIT ?`, limit)
+	rows, err := d.conn.Query(
+		`SELECT repo,path FROM discovered
+		 WHERE NOT EXISTS (SELECT 1 FROM masks m WHERE m.repo=discovered.repo AND m.path=discovered.path)
+		 ORDER BY found_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}

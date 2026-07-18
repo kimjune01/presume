@@ -51,6 +51,8 @@ presume index    OWNER/REPO --path FILE                  # build the version ind
 presume seed     HANDLE                                  # find resume-like files in a user's repos, index them
 presume ingest                                           # pull provenance for every discovered candidate
 presume classify                                         # derive role tags from each resume's latest content
+presume categories                                       # the curated job-category menu, with corpus counts
+presume mask                                             # flag non-resume false positives; omit them from search
 presume search   [--role R] [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S] [--limit N] [--json]
                                                          # query talent by role + provenance shape; returns pointers
 presume verify   OWNER/REPO SHA --path FILE              # resolve a pointer: frozen content + authority URL

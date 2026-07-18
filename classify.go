@@ -14,22 +14,29 @@ import (
 // recruiter can see exactly why a resume carries a tag. Content is fetched ephemerally to
 // derive tags (like `verify`) and never stored: the pointer-only model holds.
 //
+// SCAFFOLD, not the long-run design. A hand-maintained keyword list per category doesn't scale
+// — long-term the categories and their signals should emerge from the corpus (and from the
+// demand side, real job postings) rather than be curated. But while the corpus is thin, a
+// curated list we can afford to keep gives coverage and a stable menu that sparse data can't.
+// Languages/tools are included as signals precisely to lift coverage on generic resumes.
+//
 // A role is assigned when >= roleThreshold distinct keywords hit; if none clear the bar, the
 // single best hit is kept as a low-confidence tag. Keywords are lowercase; multiword allowed.
 var roleKeywords = map[string][]string{
-	"frontend":      {"frontend", "front-end", "front end", "react", "vue", "angular", "svelte", "next.js", "tailwind", "css", "web developer", "ui engineer"},
-	"backend":       {"backend", "back-end", "back end", "rest api", "graphql", "django", "flask", "rails", "spring boot", "express", "node.js", "microservice", "grpc"},
+	"frontend":      {"frontend", "front-end", "front end", "react", "vue", "angular", "svelte", "next.js", "tailwind", "css", "web developer", "ui engineer", "javascript", "typescript", "html", "sass", "redux", "webpack"},
+	"backend":       {"backend", "back-end", "back end", "rest api", "graphql", "django", "flask", "rails", "spring boot", "express", "node.js", "microservice", "grpc", "python", "java", "golang", "c#", ".net", "php", "laravel", "postgresql", "mysql", "mongodb", "redis"},
 	"fullstack":     {"full-stack", "fullstack", "full stack", "mern", "mean stack"},
-	"mobile":        {"ios", "android", "swift", "kotlin", "objective-c", "react native", "flutter", "mobile developer", "mobile engineer"},
-	"ml-ai":         {"machine learning", "deep learning", "pytorch", "tensorflow", "nlp", "computer vision", "data scientist", "ml engineer", "neural network", "llm", "ai engineer", "reinforcement learning"},
-	"data-engineer": {"data engineer", "etl", "apache spark", "airflow", "kafka", "data pipeline", "data warehouse", "dbt", "snowflake", "databricks"},
-	"data-analyst":  {"data analyst", "analytics", "tableau", "power bi", "looker", "dashboard", "business intelligence"},
-	"devops-sre":    {"devops", "sre", "site reliability", "kubernetes", "docker", "terraform", "ansible", "ci/cd", "infrastructure", "platform engineer", "cloud engineer"},
-	"security":      {"security engineer", "appsec", "infosec", "penetration", "pentest", "vulnerability", "cryptography", "reverse engineering", "malware", "ctf"},
-	"systems":       {"compiler", "operating system", "embedded", "firmware", "kernel", "systems programming", "low-level", "distributed systems", "high-performance"},
-	"qa-test":       {"quality assurance", "test automation", "sdet", "selenium", "cypress", "manual testing", "qa engineer"},
-	"game":          {"unity", "unreal engine", "game developer", "gameplay", "godot", "game engine"},
-	"blockchain":    {"blockchain", "solidity", "web3", "smart contract", "ethereum", "defi"},
+	"mobile":        {"ios", "android", "swift", "kotlin", "objective-c", "react native", "flutter", "mobile developer", "mobile engineer", "xcode", "swiftui", "jetpack compose"},
+	"ml-ai":         {"machine learning", "deep learning", "pytorch", "tensorflow", "nlp", "computer vision", "data scientist", "ml engineer", "neural network", "llm", "ai engineer", "reinforcement learning", "scikit", "keras", "pandas", "numpy", "data science", "opencv"},
+	"data-engineer": {"data engineer", "etl", "apache spark", "airflow", "kafka", "data pipeline", "data warehouse", "dbt", "snowflake", "databricks", "hadoop", "bigquery", "redshift"},
+	"data-analyst":  {"data analyst", "analytics", "tableau", "power bi", "looker", "dashboard", "business intelligence", "sql", "excel", "statistics"},
+	"devops-sre":    {"devops", "sre", "site reliability", "kubernetes", "docker", "terraform", "ansible", "ci/cd", "infrastructure", "platform engineer", "cloud engineer", "aws", "gcp", "azure", "jenkins", "prometheus", "grafana", "linux"},
+	"security":      {"security engineer", "appsec", "infosec", "penetration", "pentest", "vulnerability", "cryptography", "reverse engineering", "malware", "ctf", "owasp", "siem", "threat"},
+	"systems":       {"compiler", "operating system", "embedded", "firmware", "kernel", "systems programming", "low-level", "distributed systems", "high-performance", "rust", "c++", "assembly", "concurrency"},
+	"qa-test":       {"quality assurance", "test automation", "sdet", "selenium", "cypress", "manual testing", "qa engineer", "junit", "pytest", "jest"},
+	"game":          {"unity", "unreal engine", "game developer", "gameplay", "godot", "game engine", "shader"},
+	"blockchain":    {"blockchain", "solidity", "web3", "smart contract", "ethereum", "defi", "nft"},
+	"eng-manager":   {"engineering manager", "tech lead", "team lead", "people manager", "led a team", "managed a team", "director of engineering"},
 }
 
 const roleThreshold = 2
@@ -66,6 +73,27 @@ func classifyText(text string) []roleHit {
 		out = append(out, scored[0]) // best-effort low-confidence tag
 	}
 	return out
+}
+
+// cmdCategories prints the curated job-category taxonomy with per-category corpus counts. The
+// list is a first-class, browsable menu — useful precisely when the corpus is too thin for
+// categories to emerge on their own. It is a scaffold: long-term, categories should be derived
+// from the corpus and the demand side, not hand-kept.
+func cmdCategories(db *platform.DB) error {
+	counts, err := db.RoleCounts()
+	if err != nil {
+		return err
+	}
+	roles := make([]string, 0, len(roleKeywords))
+	for r := range roleKeywords {
+		roles = append(roles, r)
+	}
+	sort.Slice(roles, func(i, j int) bool { return counts[roles[i]] > counts[roles[j]] })
+	fmt.Println("job categories (curated scaffold — thin-corpus bootstrap):")
+	for _, r := range roles {
+		fmt.Printf("  %-14s %3d resumes   %d keywords\n", r, counts[r], len(roleKeywords[r]))
+	}
+	return nil
 }
 
 // cmdClassify derives role tags for every ingested resume from its latest version's content.
