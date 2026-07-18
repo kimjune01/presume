@@ -55,8 +55,12 @@ Move items to **Done** as they land. If work reveals new open problems, add them
 - **Resume classifier / species tags.** Discovery surfaces distinct shapes worth labeling:
   *tombstone* (stable body, plumbing-only commits — real provenance, zero resume content),
   *cosmetic churner* (many commits, no claim movement), *dormant-then-sprint* (long flat line,
-  one datable revision event), *single-commit* (no history, no anti-tailoring signal). Only the
-  last is useless to presume; flag it as such rather than indexing it as if it carried signal.
+  one datable revision event), *single-commit* (a positioning artifact — a public, timestamped
+  stance). The disqualifier is never depth, it's **recency relative to the posting**: a single
+  commit that predates the posting is pre-commitment (couldn't be tailored) and beats a private
+  PDF; a same-day commit is the tailored case regardless of how many versions precede it. So
+  don't dismiss shallow provenance — flag it as weak-but-real positioning, and let `apply`'s
+  commit-vs-application gap, not the version count, decide tailored vs pre-committed.
 
 ## Next — trust hardening
 
