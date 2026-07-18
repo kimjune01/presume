@@ -20,6 +20,10 @@ import (
 // curated list we can afford to keep gives coverage and a stable menu that sparse data can't.
 // Languages/tools are included as signals precisely to lift coverage on generic resumes.
 //
+// Categories are NOT mutually exclusive: a profile holds every role it fits (a full-stack dev
+// is both frontend and backend). This classifier already multi-tags; enrich does likewise with
+// multiple strong roles. Never collapse a profile to one category.
+//
 // A role is assigned when >= roleThreshold distinct keywords hit; if none clear the bar, the
 // single best hit is kept as a low-confidence tag. Keywords are lowercase; multiword allowed.
 var roleKeywords = map[string][]string{
