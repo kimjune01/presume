@@ -75,9 +75,10 @@ func main() {
 		check(cmdClassify(db, gh))
 	case "enrich":
 		fs := flag.NewFlagSet("enrich", flag.ExitOnError)
-		limit := fs.Int("limit", 0, "enrich at most N un-judged resumes (deepest provenance first)")
+		limit := fs.Int("limit", 0, "enrich at most N resumes (deepest provenance first)")
+		force := fs.Bool("force", false, "re-judge already-enriched/enrich-masked resumes")
 		fs.Parse(os.Args[2:])
-		check(cmdEnrich(db, gh, *limit))
+		check(cmdEnrich(db, gh, *limit, *force))
 	case "mask":
 		if repo, rest := arg(os.Args[2:]); repo != "" {
 			fs := flag.NewFlagSet("mask", flag.ExitOnError)
@@ -90,6 +91,14 @@ func main() {
 		} else {
 			check(cmdMask(db))
 		}
+	case "unmask":
+		repo, rest := arg(os.Args[2:])
+		fs := flag.NewFlagSet("unmask", flag.ExitOnError)
+		fp := fs.String("path", "", "file path within the repo")
+		fs.Parse(rest)
+		require(repo != "" && *fp != "", "usage: presume unmask OWNER/REPO --path FILE")
+		check(db.Unmask(repo, *fp))
+		fmt.Printf("unmasked %s :: %s\n", repo, *fp)
 	case "categories":
 		check(cmdCategories(db))
 	case "search":
@@ -421,7 +430,8 @@ func usage() {
   presume classify
   presume mask
   presume categories
-  presume enrich   [--limit N]           # Haiku pass: verdict + primary role + pdf-wrapper detection
+  presume enrich   [--limit N] [--force] # Haiku pass: verdict + primary role + pdf-wrapper detection
+  presume unmask   OWNER/REPO --path FILE # reverse a mask (masking is cheap to re-run)
   presume search   [--role R] [--active-within YEARS] [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S] [--limit N] [--json]
   presume verify   OWNER/REPO SHA --path FILE
   presume apply    OWNER/REPO SHA --path FILE --job REF

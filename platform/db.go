@@ -269,30 +269,24 @@ func (d *DB) Mask(repo, path, reason, at string) error {
 
 func (d *DB) MaskedCount() (int, error) { return d.Count("masks") }
 
-// UpsertJudgment records the Haiku enrichment verdict for a resume (derived tags only, never
-// the content). Idempotent per (repo,path).
-func (d *DB) UpsertJudgment(repo, path string, isResume bool, kind, primary, seniority, note, at string) error {
-	ir := 0
-	if isResume {
-		ir = 1
-	}
-	_, err := d.conn.Exec(
-		`INSERT INTO judgments(repo,path,is_resume,kind,primary_role,seniority,note,judged_at)
-		 VALUES (?,?,?,?,?,?,?,?)
-		 ON CONFLICT(repo,path) DO UPDATE SET is_resume=excluded.is_resume, kind=excluded.kind,
-		   primary_role=excluded.primary_role, seniority=excluded.seniority, note=excluded.note,
-		   judged_at=excluded.judged_at`,
-		repo, path, ir, kind, primary, seniority, note, at)
+// Unmask reverses a mask — the cheap undo that makes masking safe to re-run.
+func (d *DB) Unmask(repo, path string) error {
+	_, err := d.conn.Exec(`DELETE FROM masks WHERE repo=? AND path=?`, repo, path)
 	return err
 }
 
-// UnjudgedResumes returns unmasked, not-yet-enriched resumes, deepest provenance first — so a
-// bounded enrich run spends the budget on the candidates that matter most.
-func (d *DB) UnjudgedResumes(limit int) ([]Discovered, error) {
+// ResumesToEnrich picks resumes for the Haiku pass, deepest provenance first. Normally only the
+// un-judged, unmasked ones; with force, it re-includes already-judged and enrich-masked resumes
+// (but never manually/filter-masked ones) so a wrong verdict is cheap to re-run.
+func (d *DB) ResumesToEnrich(force bool, limit int) ([]Discovered, error) {
 	q := `SELECT repo, path FROM versions v
-	      WHERE NOT EXISTS (SELECT 1 FROM masks m WHERE m.repo=v.repo AND m.path=v.path)
-	        AND NOT EXISTS (SELECT 1 FROM judgments j WHERE j.repo=v.repo AND j.path=v.path)
-	      GROUP BY repo, path ORDER BY count(*) DESC`
+	      WHERE NOT EXISTS (SELECT 1 FROM masks m WHERE m.repo=v.repo AND m.path=v.path
+	                        AND m.reason NOT LIKE 'enrich:%')`
+	if !force {
+		q += ` AND NOT EXISTS (SELECT 1 FROM masks m2 WHERE m2.repo=v.repo AND m2.path=v.path)
+		       AND NOT EXISTS (SELECT 1 FROM judgments j WHERE j.repo=v.repo AND j.path=v.path)`
+	}
+	q += ` GROUP BY repo, path ORDER BY count(*) DESC`
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
@@ -310,6 +304,23 @@ func (d *DB) UnjudgedResumes(limit int) ([]Discovered, error) {
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// UpsertJudgment records the Haiku enrichment verdict for a resume (derived tags only, never
+// the content). Idempotent per (repo,path).
+func (d *DB) UpsertJudgment(repo, path string, isResume bool, kind, primary, seniority, note, at string) error {
+	ir := 0
+	if isResume {
+		ir = 1
+	}
+	_, err := d.conn.Exec(
+		`INSERT INTO judgments(repo,path,is_resume,kind,primary_role,seniority,note,judged_at)
+		 VALUES (?,?,?,?,?,?,?,?)
+		 ON CONFLICT(repo,path) DO UPDATE SET is_resume=excluded.is_resume, kind=excluded.kind,
+		   primary_role=excluded.primary_role, seniority=excluded.seniority, note=excluded.note,
+		   judged_at=excluded.judged_at`,
+		repo, path, ir, kind, primary, seniority, note, at)
+	return err
 }
 
 // RoleCounts returns how many (unmasked) resumes carry each role tag.

@@ -58,8 +58,8 @@ func parseJudgment(s string) (judgment, error) {
 	return j, json.Unmarshal([]byte(s[a:b+1]), &j)
 }
 
-func cmdEnrich(db *platform.DB, gh *forge.Client, limit int) error {
-	resumes, err := db.UnjudgedResumes(limit)
+func cmdEnrich(db *platform.DB, gh *forge.Client, limit int, force bool) error {
+	resumes, err := db.ResumesToEnrich(force, limit)
 	if err != nil {
 		return err
 	}
@@ -67,6 +67,9 @@ func cmdEnrich(db *platform.DB, gh *forge.Client, limit int) error {
 	done, masked, retagged, failed := 0, 0, 0, 0
 	for _, r := range resumes {
 		done++
+		if force {
+			db.Unmask(r.Repo, r.Path) // clear any prior enrich mask so the re-run can reconsider
+		}
 		sha, err := db.LatestSHA(r.Repo, r.Path)
 		if err != nil || sha == "" {
 			failed++
