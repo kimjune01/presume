@@ -21,24 +21,28 @@ import (
 // each query in narrow size buckets (< 1000 hits each); beat the rate limit by pacing and
 // checkpointing the cursor so a run resumes instead of restarting.
 //
-// Over-narrow first, then broaden. Precision ranking, learned from live sweeps:
-//   1. JSON Resume (resume.json, jsonresume.org schema) — structured, deliberate, git-versioned
-//      by construction. A resume.json is almost never anything but a real personal resume, and
-//      the format self-selects for people who treat a resume as code. Highest precision → front.
-//   2. exact filename + Markdown-classified — small, precise personal resumes.
-//   3. exact filename, any classification.
-//   4. path: matches — broadest, noisiest; the long tail.
+// Over-narrow first, then broaden. The ladder ranks by DISCOVERY PRECISION — the signal-to-
+// noise of "is this hit even a personal resume" — because that is discover's only job. This is
+// a different axis from CONTENT-DIFF cleanliness (how cleanly a real resume's versions diff),
+// where structured .json is best and binary .pdf worst. Do not conflate them: resume.json has
+// the cleanest content-diff but a NOISY discovery signal (the exact basename collides with
+// Discord-bot i18n files, JSON-schema defs, and app data), so it ranks BELOW the .md queries
+// here. Rank the ladder by discovery precision; let the content-diff axis matter later, when a
+// found resume is actually analyzed.
+//   1-4. exact resume/cv .md, Markdown-classified first — cleanest discovery signal.
+//   5-8. resume/cv .json + .markdown — real resumes, noisier basenames.
+//   9-12. .yaml/.yml + path: matches — broadest, noisiest long tail.
 // Empirical note: EXPLICIT provenance markers (.ots / signed / build-SHA stamps) are a ~null
 // set on GitHub, so we do NOT query for them — presume reads IMPLICIT git provenance instead.
 var queries = []string{
-	"filename:resume.json",
-	"filename:cv.json",
 	"filename:resume.md language:Markdown",
 	"filename:cv.md language:Markdown",
 	"filename:resume.md",
 	"filename:cv.md",
 	"filename:resume.markdown",
 	"filename:cv.markdown",
+	"filename:resume.json",
+	"filename:cv.json",
 	"filename:resume.yaml",
 	"filename:resume.yml",
 	"path:resume.md",
