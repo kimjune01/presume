@@ -65,6 +65,8 @@ func main() {
 	case "seed":
 		require(len(os.Args) >= 3, "usage: presume seed HANDLE")
 		check(cmdSeed(db, gh, os.Args[2]))
+	case "ingest":
+		check(cmdIngest(db, gh))
 	case "search":
 		fs := flag.NewFlagSet("search", flag.ExitOnError)
 		mv := fs.Int("min-versions", 1, "minimum version count")
@@ -147,6 +149,39 @@ func cmdSeed(db *platform.DB, gh *forge.Client, handle string) error {
 		}
 	}
 	fmt.Printf("seeded %d resume file(s) for %s\n", seeded, handle)
+	return nil
+}
+
+// cmdIngest pulls the commit-history provenance for every discovered candidate into the
+// versions table — turning the pointer list from `discover` into a searchable provenance index.
+func cmdIngest(db *platform.DB, gh *forge.Client) error {
+	cands, err := db.AllDiscovered()
+	if err != nil {
+		return err
+	}
+	indexed, versions, unreachable := 0, 0, 0
+	for _, c := range cands {
+		commits, err := gh.Commits(c.Repo, c.Path)
+		if err != nil || len(commits) == 0 {
+			unreachable++
+			continue
+		}
+		for _, cm := range commits {
+			isNew, err := db.UpsertVersion(c.Repo, c.Path, cm.SHA, cm.Date.Format(time.RFC3339), cm.Subject, cm.Author)
+			if err != nil {
+				return err
+			}
+			if isNew {
+				versions++
+			}
+		}
+		indexed++
+		if indexed%25 == 0 {
+			fmt.Printf("  ingested %d/%d…\n", indexed, len(cands))
+		}
+	}
+	fmt.Printf("ingested %d/%d discovered resumes — %d new versions (%d unreachable/empty)\n",
+		indexed, len(cands), versions, unreachable)
 	return nil
 }
 
@@ -276,6 +311,7 @@ func usage() {
   presume discover [--pages N] [--reset]
   presume index    OWNER/REPO --path FILE
   presume seed     HANDLE
+  presume ingest
   presume search   [--min-versions N] [--min-span-days N] [--committed-before YYYY-MM-DD] [--handle S]
   presume verify   OWNER/REPO SHA --path FILE
   presume apply    OWNER/REPO SHA --path FILE --job REF

@@ -165,6 +165,24 @@ func (d *DB) Applications(handle string) ([]AppRow, error) {
 
 type Discovered struct{ Repo, Path string }
 
+// AllDiscovered lists every discovered candidate (for ingest — pull each one's provenance).
+func (d *DB) AllDiscovered() ([]Discovered, error) {
+	rows, err := d.conn.Query(`SELECT repo,path FROM discovered ORDER BY found_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Discovered
+	for rows.Next() {
+		var v Discovered
+		if err := rows.Scan(&v.Repo, &v.Path); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func (d *DB) RecentDiscovered(limit int) ([]Discovered, error) {
 	rows, err := d.conn.Query(`SELECT repo,path FROM discovered ORDER BY found_at DESC LIMIT ?`, limit)
 	if err != nil {
