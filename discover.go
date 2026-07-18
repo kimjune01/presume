@@ -21,15 +21,26 @@ import (
 // each query in narrow size buckets (< 1000 hits each); beat the rate limit by pacing and
 // checkpointing the cursor so a run resumes instead of restarting.
 //
-// Over-narrow first, then broaden: exact filename + Markdown-classified first (small, precise,
-// real personal resumes), dropping qualifiers into the noisy long tail only later.
+// Over-narrow first, then broaden. Precision ranking, learned from live sweeps:
+//   1. JSON Resume (resume.json, jsonresume.org schema) — structured, deliberate, git-versioned
+//      by construction. A resume.json is almost never anything but a real personal resume, and
+//      the format self-selects for people who treat a resume as code. Highest precision → front.
+//   2. exact filename + Markdown-classified — small, precise personal resumes.
+//   3. exact filename, any classification.
+//   4. path: matches — broadest, noisiest; the long tail.
+// Empirical note: EXPLICIT provenance markers (.ots / signed / build-SHA stamps) are a ~null
+// set on GitHub, so we do NOT query for them — presume reads IMPLICIT git provenance instead.
 var queries = []string{
+	"filename:resume.json",
+	"filename:cv.json",
 	"filename:resume.md language:Markdown",
 	"filename:cv.md language:Markdown",
 	"filename:resume.md",
 	"filename:cv.md",
 	"filename:resume.markdown",
 	"filename:cv.markdown",
+	"filename:resume.yaml",
+	"filename:resume.yml",
 	"path:resume.md",
 	"path:cv.md",
 }
@@ -46,13 +57,19 @@ const (
 
 // GitHub's filename:/path: qualifiers token-match, leaking vibe-resume.md, session-resume.md,
 // _posts/2022-08-11-resume.md, README_RESUME.md. Enforce narrowness with an exact basename.
-var resumeBasename = regexp.MustCompile(`(?i)^(my)?(resume|cv|cv-resume)\.(md|markdown)$`)
+// Extensions restricted to the rendered/structured resume formats we query (md, markdown, json,
+// yaml/yml) — not .html/.tex, whose histories are dominated by build churn, not claim edits.
+var resumeBasename = regexp.MustCompile(`(?i)^(my)?(resume|cv|cv-resume)\.(md|markdown|json|ya?ml)$`)
 
 // Reject course repos / templates / prompt libs / agent-command files — not personal resumes.
+// The locale/bot patterns (/languages/, /i18n/, /music/, discord) exclude the biggest
+// resume.json false positive: the "resume" (playback) command's i18n file in Discord bots.
 var notPersonal = regexp.MustCompile(`(?i)template|example|sample|boilerplate|starter|tutorial|` +
 	`course|homework|assign|awesome|prompt|snippet|lingo|cs[-_]?\d{2,}|dm-gy|topjava|ml[-_]?note|` +
 	`\.claude/|\.codex/|/commands/|/skills/|/_posts/|reading-notes|-sources|/skills-|resolve-merge|` +
-	`test-with-action|github-pages|/docs/|_sdk`)
+	`test-with-action|github-pages|/docs/|_sdk|` +
+	`/languages/|/locales/|/lang/|/i18n/|/music/|discord|guvi|weekend-practice|` +
+	`/schemas/|/trigger/`) // resume.json is also used as a JSON-schema def / ETL trigger file
 
 type cursor struct {
 	QI   int  `json:"qi"`
