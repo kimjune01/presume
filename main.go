@@ -18,9 +18,12 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/kimjune01/presume/forge"
@@ -67,14 +70,19 @@ func main() {
 		check(cmdSeed(db, gh, os.Args[2]))
 	case "ingest":
 		check(cmdIngest(db, gh))
+	case "classify":
+		check(cmdClassify(db, gh))
 	case "search":
 		fs := flag.NewFlagSet("search", flag.ExitOnError)
 		mv := fs.Int("min-versions", 1, "minimum version count")
 		ms := fs.Int("min-span-days", 0, "minimum days between first and last version")
 		cb := fs.String("committed-before", "", "require a version committed before YYYY-MM-DD")
 		h := fs.String("handle", "", "substring filter on OWNER/REPO")
+		role := fs.String("role", "", "filter by derived role tag (e.g. backend, ml-ai, devops-sre)")
+		limit := fs.Int("limit", 0, "return at most N candidates (0 = all)")
+		asJSON := fs.Bool("json", false, "emit JSON pointers (agent-first)")
 		fs.Parse(os.Args[2:])
-		check(cmdSearch(db, *mv, *ms, *cb, *h))
+		check(cmdSearch(db, *mv, *ms, *cb, *h, *role, *limit, *asJSON))
 	case "verify":
 		repo, sha, rest := arg2(os.Args[2:])
 		fs := flag.NewFlagSet("verify", flag.ExitOnError)
@@ -185,19 +193,55 @@ func cmdIngest(db *platform.DB, gh *forge.Client) error {
 	return nil
 }
 
-func cmdSearch(db *platform.DB, minVersions, minSpanDays int, committedBefore, handle string) error {
-	cands, err := db.SearchCandidates(minVersions, minSpanDays, committedBefore, handle)
+// pointer is the agent-first result shape: a resolvable link plus the provenance and role tags
+// an agent needs to rank, with nothing to trust — every field re-verifies against the authority.
+type pointer struct {
+	Repo        string   `json:"repo"`
+	Path        string   `json:"path"`
+	Roles       []string `json:"roles"`
+	Versions    int      `json:"versions"`
+	SpanDays    int      `json:"span_days"`
+	FirstCommit string   `json:"first_committed"`
+	EarliestSHA string   `json:"earliest_sha"`
+	Authority   string   `json:"authority"`
+}
+
+func cmdSearch(db *platform.DB, minVersions, minSpanDays int, committedBefore, handle, role string, limit int, asJSON bool) error {
+	cands, err := db.SearchCandidates(minVersions, minSpanDays, committedBefore, handle, role)
 	if err != nil {
 		return err
 	}
+	// deepest provenance first — the strongest, hardest-to-fake candidates lead.
+	sort.Slice(cands, func(i, j int) bool { return cands[i].SpanDays > cands[j].SpanDays })
+	if limit > 0 && len(cands) > limit {
+		cands = cands[:limit]
+	}
+	if asJSON {
+		out := make([]pointer, len(cands))
+		for i, c := range cands {
+			out[i] = pointer{c.Repo, c.Path, orEmpty(c.Roles), c.Versions, c.SpanDays,
+				c.First[:10], c.EarliestSHA, forge.RawURL(c.Repo, c.EarliestSHA, c.Path)}
+		}
+		b, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Println(string(b))
+		return nil
+	}
 	for _, c := range cands {
+		roles := "—"
+		if len(c.Roles) > 0 {
+			roles = strings.Join(c.Roles, ", ")
+		}
 		fmt.Printf("\n%s :: %s\n", c.Repo, c.Path)
+		fmt.Printf("  roles        : %s\n", roles)
 		fmt.Printf("  provenance   : %d versions over %d days (%s → %s)\n",
 			c.Versions, c.SpanDays, c.First[:10], c.Latest[:10])
 		fmt.Printf("  earliest ref : %s  committed %s  (pre-commitment anchor)\n", short(c.EarliestSHA), c.First[:10])
 		fmt.Printf("  authority    : %s\n", forge.RawURL(c.Repo, c.EarliestSHA, c.Path))
 	}
 	crit := fmt.Sprintf("versions>=%d, span>=%dd", minVersions, minSpanDays)
+	if role != "" {
+		crit += ", role=" + role
+	}
 	if committedBefore != "" {
 		crit += ", a version before " + committedBefore
 	}
@@ -206,6 +250,13 @@ func cmdSearch(db *platform.DB, minVersions, minSpanDays int, committedBefore, h
 	}
 	fmt.Printf("\n%d candidate(s) matching [%s] — verify each pointer against the git host.\n", len(cands), crit)
 	return nil
+}
+
+func orEmpty(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func cmdVerify(gh *forge.Client, repo, sha, path string) error {
@@ -312,11 +363,13 @@ func usage() {
   presume index    OWNER/REPO --path FILE
   presume seed     HANDLE
   presume ingest
-  presume search   [--min-versions N] [--min-span-days N] [--committed-before YYYY-MM-DD] [--handle S]
+  presume classify
+  presume search   [--role R] [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S] [--limit N] [--json]
   presume verify   OWNER/REPO SHA --path FILE
   presume apply    OWNER/REPO SHA --path FILE --job REF
   presume log      [HANDLE]
 
+Roles: frontend backend fullstack mobile ml-ai data-engineer data-analyst devops-sre security systems qa-test game blockchain
 DB path: $PRESUME_DB (default ./bank.db). Token: $GITHUB_PUBLIC_API_KEY or gh auth.`)
 	os.Exit(2)
 }

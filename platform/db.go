@@ -20,7 +20,10 @@ CREATE TABLE IF NOT EXISTS applications(
   id INTEGER PRIMARY KEY, repo TEXT, path TEXT, sha TEXT, job TEXT,
   applied_at TEXT, committed_at TEXT, latency_days REAL);
 CREATE TABLE IF NOT EXISTS discovered(
-  url TEXT PRIMARY KEY, repo TEXT, path TEXT, found_at TEXT);`
+  url TEXT PRIMARY KEY, repo TEXT, path TEXT, found_at TEXT);
+CREATE TABLE IF NOT EXISTS roles(
+  repo TEXT, path TEXT, role TEXT, score INTEGER,
+  PRIMARY KEY(repo, path, role));`
 
 func Open(path string) (*DB, error) {
 	conn, err := sql.Open("sqlite", path)
@@ -77,11 +80,13 @@ func (d *DB) Count(table string) (int, error) {
 type Candidate struct {
 	Repo, Path, First, Latest, EarliestSHA string
 	Versions, SpanDays                     int
+	Roles                                  []string
 }
 
-// SearchCandidates queries talent by provenance SHAPE. It filters, never ranks or adjudicates —
-// each match carries the pointer the recruiter resolves against the git host.
-func (d *DB) SearchCandidates(minVersions, minSpanDays int, committedBefore, handle string) ([]Candidate, error) {
+// SearchCandidates queries talent by provenance SHAPE and (optionally) role. It filters, never
+// ranks or adjudicates — each match carries the pointer the recruiter resolves against the git
+// host, plus its derived role tags. An empty role matches everything.
+func (d *DB) SearchCandidates(minVersions, minSpanDays int, committedBefore, handle, role string) ([]Candidate, error) {
 	rows, err := d.conn.Query(`
 	  SELECT repo, path, count(*) n, min(committed_at) first, max(committed_at) latest,
 	         CAST(julianday(max(committed_at)) - julianday(min(committed_at)) AS INT) span
@@ -105,9 +110,84 @@ func (d *DB) SearchCandidates(minVersions, minSpanDays int, committedBefore, han
 		if committedBefore != "" && ymd(c.First) >= committedBefore {
 			continue
 		}
+		roles, err := d.RolesFor(c.Repo, c.Path)
+		if err != nil {
+			return nil, err
+		}
+		if role != "" && !contains(roles, strings.ToLower(role)) {
+			continue
+		}
+		c.Roles = roles
 		d.conn.QueryRow(`SELECT sha FROM versions WHERE repo=? AND path=? ORDER BY committed_at LIMIT 1`,
 			c.Repo, c.Path).Scan(&c.EarliestSHA)
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func contains(s []string, x string) bool {
+	for _, v := range s {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
+// role-tag storage — derived facts about a resume, never its content.
+
+func (d *DB) DistinctResumes() ([]Discovered, error) {
+	rows, err := d.conn.Query(`SELECT DISTINCT repo, path FROM versions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Discovered
+	for rows.Next() {
+		var v Discovered
+		if err := rows.Scan(&v.Repo, &v.Path); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) LatestSHA(repo, path string) (string, error) {
+	var sha string
+	err := d.conn.QueryRow(
+		`SELECT sha FROM versions WHERE repo=? AND path=? ORDER BY committed_at DESC LIMIT 1`,
+		repo, path).Scan(&sha)
+	return sha, err
+}
+
+func (d *DB) ClearRoles(repo, path string) error {
+	_, err := d.conn.Exec(`DELETE FROM roles WHERE repo=? AND path=?`, repo, path)
+	return err
+}
+
+func (d *DB) UpsertRole(repo, path, role string, score int) error {
+	_, err := d.conn.Exec(
+		`INSERT INTO roles(repo,path,role,score) VALUES (?,?,?,?)
+		 ON CONFLICT(repo,path,role) DO UPDATE SET score=excluded.score`,
+		repo, path, role, score)
+	return err
+}
+
+func (d *DB) RolesFor(repo, path string) ([]string, error) {
+	rows, err := d.conn.Query(
+		`SELECT role FROM roles WHERE repo=? AND path=? ORDER BY score DESC`, repo, path)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var r string
+		if err := rows.Scan(&r); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

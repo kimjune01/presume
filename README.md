@@ -49,12 +49,22 @@ it — ephemeral, like a browser, never stored.
 presume discover [--pages N] [--reset]                   # sweep GitHub for resumes (resumable), to seed from
 presume index    OWNER/REPO --path FILE                  # build the version index from git history
 presume seed     HANDLE                                  # find resume-like files in a user's repos, index them
-presume search   [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S]
-                                                         # query talent by provenance shape; returns pointers
+presume ingest                                           # pull provenance for every discovered candidate
+presume classify                                         # derive role tags from each resume's latest content
+presume search   [--role R] [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S] [--limit N] [--json]
+                                                         # query talent by role + provenance shape; returns pointers
 presume verify   OWNER/REPO SHA --path FILE              # resolve a pointer: frozen content + authority URL
 presume apply    OWNER/REPO SHA --path FILE --job REF    # apply by reference; emit the anti-tailoring signal
 presume log      [HANDLE]                                # indexed versions and applications
 ```
+
+**Agent-first.** `search --json` returns an array of pointer objects (`repo`, `path`, `roles`,
+`versions`, `span_days`, `earliest_sha`, `authority`), deepest-provenance first — a few
+resolvable links an agent can rank without trusting the index. Roles come from a transparent
+keyword classifier (frontend / backend / fullstack / mobile / ml-ai / data-engineer /
+data-analyst / devops-sre / security / systems / qa-test / game / blockchain), derived from
+content fetched ephemerally at `classify` time and stored as tags — never the resume body.
+Pipeline: `discover` → `ingest` → `classify` → `search --role … --json`.
 
 Go, on the [pageleft](https://github.com/kimjune01/pageleft) skeleton: pure-Go SQLite
 (`modernc.org/sqlite`, no CGo), a `net/http` GitHub client in `forge/`, a pointer store in
