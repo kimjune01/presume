@@ -1,0 +1,9 @@
+/presume
+bank.db
+*.db-wal
+*.db-shm
+fresh.db
+bank/
+.discover_cursor.json
+__pycache__/
+*.pyc
