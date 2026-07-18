@@ -84,17 +84,21 @@ Go, on the [pageleft](https://github.com/kimjune01/pageleft) skeleton: pure-Go S
 gitignored). `discover` sweeps GitHub code search — narrow filenames first, then broadening —
 checkpointing a gitignored cursor so it resumes under the rate limit instead of restarting.
 
-## Composes with `resume-audit`
+## Composes with [`resume-audit`](https://github.com/kimjune01/june.kim/blob/master/skills/resume-audit/SKILL.md)
 
 Two orthogonal defenses:
 
 - **presume** answers *which version, committed when, and was it stuffed for this posting* —
   it defeats **tailoring**.
-- **resume-audit** (sibling skill) answers *are the claims in that version staked and true*
-  (self / peer / world attestation, cost-and-stake filter) — it defeats **fabrication**.
+- **[resume-audit](https://github.com/kimjune01/june.kim/blob/master/skills/resume-audit/SKILL.md)**
+  (a Claude Code skill) answers *are the claims in that version staked and true* (self / peer /
+  world attestation, cost-and-stake filter, quick-scan or deep-audit depth) — it defeats
+  **fabrication**.
 
 Point `resume-audit` at the exact `presume`-referenced version and you have both: a frozen,
-timestamped, un-tailored resume whose claims are verified against the contribution graph.
+timestamped, un-tailored resume whose claims are verified against the contribution graph. The
+skill also reaches back for presume's provenance — `presume wayback` / `presume verify` — as
+one of its own checks.
 
 ## Status
 
