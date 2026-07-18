@@ -5,6 +5,7 @@ package platform
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -26,6 +27,10 @@ CREATE TABLE IF NOT EXISTS roles(
   PRIMARY KEY(repo, path, role));
 CREATE TABLE IF NOT EXISTS masks(
   repo TEXT, path TEXT, reason TEXT, masked_at TEXT,
+  PRIMARY KEY(repo, path));
+CREATE TABLE IF NOT EXISTS judgments(
+  repo TEXT, path TEXT, is_resume INTEGER, kind TEXT, primary_role TEXT,
+  seniority TEXT, note TEXT, judged_at TEXT,
   PRIMARY KEY(repo, path));`
 
 func Open(path string) (*DB, error) {
@@ -89,7 +94,7 @@ type Candidate struct {
 // SearchCandidates queries talent by provenance SHAPE and (optionally) role. It filters, never
 // ranks or adjudicates — each match carries the pointer the recruiter resolves against the git
 // host, plus its derived role tags. An empty role matches everything.
-func (d *DB) SearchCandidates(minVersions, minSpanDays int, committedBefore, handle, role string) ([]Candidate, error) {
+func (d *DB) SearchCandidates(minVersions, minSpanDays int, committedBefore, handle, role, activeAfter string) ([]Candidate, error) {
 	rows, err := d.conn.Query(`
 	  SELECT repo, path, count(*) n, min(committed_at) first, max(committed_at) latest,
 	         CAST(julianday(max(committed_at)) - julianday(min(committed_at)) AS INT) span
@@ -113,6 +118,9 @@ func (d *DB) SearchCandidates(minVersions, minSpanDays int, committedBefore, han
 			continue
 		}
 		if committedBefore != "" && ymd(c.First) >= committedBefore {
+			continue
+		}
+		if activeAfter != "" && ymd(c.Latest) < activeAfter { // latest version too old — stale
 			continue
 		}
 		roles, err := d.RolesFor(c.Repo, c.Path)
@@ -260,6 +268,49 @@ func (d *DB) Mask(repo, path, reason, at string) error {
 }
 
 func (d *DB) MaskedCount() (int, error) { return d.Count("masks") }
+
+// UpsertJudgment records the Haiku enrichment verdict for a resume (derived tags only, never
+// the content). Idempotent per (repo,path).
+func (d *DB) UpsertJudgment(repo, path string, isResume bool, kind, primary, seniority, note, at string) error {
+	ir := 0
+	if isResume {
+		ir = 1
+	}
+	_, err := d.conn.Exec(
+		`INSERT INTO judgments(repo,path,is_resume,kind,primary_role,seniority,note,judged_at)
+		 VALUES (?,?,?,?,?,?,?,?)
+		 ON CONFLICT(repo,path) DO UPDATE SET is_resume=excluded.is_resume, kind=excluded.kind,
+		   primary_role=excluded.primary_role, seniority=excluded.seniority, note=excluded.note,
+		   judged_at=excluded.judged_at`,
+		repo, path, ir, kind, primary, seniority, note, at)
+	return err
+}
+
+// UnjudgedResumes returns unmasked, not-yet-enriched resumes, deepest provenance first — so a
+// bounded enrich run spends the budget on the candidates that matter most.
+func (d *DB) UnjudgedResumes(limit int) ([]Discovered, error) {
+	q := `SELECT repo, path FROM versions v
+	      WHERE NOT EXISTS (SELECT 1 FROM masks m WHERE m.repo=v.repo AND m.path=v.path)
+	        AND NOT EXISTS (SELECT 1 FROM judgments j WHERE j.repo=v.repo AND j.path=v.path)
+	      GROUP BY repo, path ORDER BY count(*) DESC`
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := d.conn.Query(q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Discovered
+	for rows.Next() {
+		var v Discovered
+		if err := rows.Scan(&v.Repo, &v.Path); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
 
 // RoleCounts returns how many (unmasked) resumes carry each role tag.
 func (d *DB) RoleCounts() (map[string]int, error) {

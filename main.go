@@ -73,6 +73,11 @@ func main() {
 		check(cmdIngest(db, gh))
 	case "classify":
 		check(cmdClassify(db, gh))
+	case "enrich":
+		fs := flag.NewFlagSet("enrich", flag.ExitOnError)
+		limit := fs.Int("limit", 0, "enrich at most N un-judged resumes (deepest provenance first)")
+		fs.Parse(os.Args[2:])
+		check(cmdEnrich(db, gh, *limit))
 	case "mask":
 		if repo, rest := arg(os.Args[2:]); repo != "" {
 			fs := flag.NewFlagSet("mask", flag.ExitOnError)
@@ -94,10 +99,11 @@ func main() {
 		cb := fs.String("committed-before", "", "require a version committed before YYYY-MM-DD")
 		h := fs.String("handle", "", "substring filter on OWNER/REPO")
 		role := fs.String("role", "", "filter by derived role tag (e.g. backend, ml-ai, devops-sre)")
+		aw := fs.Int("active-within", 3, "only resumes whose latest version is within N years (0 = any)")
 		limit := fs.Int("limit", 0, "return at most N candidates (0 = all)")
 		asJSON := fs.Bool("json", false, "emit JSON pointers (agent-first)")
 		fs.Parse(os.Args[2:])
-		check(cmdSearch(db, *mv, *ms, *cb, *h, *role, *limit, *asJSON))
+		check(cmdSearch(db, *mv, *ms, *cb, *h, *role, *aw, *limit, *asJSON))
 	case "verify":
 		repo, sha, rest := arg2(os.Args[2:])
 		fs := flag.NewFlagSet("verify", flag.ExitOnError)
@@ -224,8 +230,12 @@ type pointer struct {
 	Authority   string   `json:"authority"`
 }
 
-func cmdSearch(db *platform.DB, minVersions, minSpanDays int, committedBefore, handle, role string, limit int, asJSON bool) error {
-	cands, err := db.SearchCandidates(minVersions, minSpanDays, committedBefore, handle, role)
+func cmdSearch(db *platform.DB, minVersions, minSpanDays int, committedBefore, handle, role string, activeWithinYears, limit int, asJSON bool) error {
+	activeAfter := ""
+	if activeWithinYears > 0 {
+		activeAfter = time.Now().AddDate(-activeWithinYears, 0, 0).Format("2006-01-02")
+	}
+	cands, err := db.SearchCandidates(minVersions, minSpanDays, committedBefore, handle, role, activeAfter)
 	if err != nil {
 		return err
 	}
@@ -257,6 +267,9 @@ func cmdSearch(db *platform.DB, minVersions, minSpanDays int, committedBefore, h
 		fmt.Printf("  authority    : %s\n", forge.RawURL(c.Repo, c.EarliestSHA, c.Path))
 	}
 	crit := fmt.Sprintf("versions>=%d, span>=%dd", minVersions, minSpanDays)
+	if activeAfter != "" {
+		crit += ", active since " + activeAfter
+	}
 	if role != "" {
 		crit += ", role=" + role
 	}
@@ -408,7 +421,8 @@ func usage() {
   presume classify
   presume mask
   presume categories
-  presume search   [--role R] [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S] [--limit N] [--json]
+  presume enrich   [--limit N]           # Haiku pass: verdict + primary role + pdf-wrapper detection
+  presume search   [--role R] [--active-within YEARS] [--min-versions N] [--min-span-days N] [--committed-before DATE] [--handle S] [--limit N] [--json]
   presume verify   OWNER/REPO SHA --path FILE
   presume apply    OWNER/REPO SHA --path FILE --job REF
   presume wayback  URL                    # un-backdatable provenance chain from the Internet Archive
